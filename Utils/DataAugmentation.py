@@ -84,17 +84,20 @@ class RandomCrop2D(object):
 
         img = np.pad(
             img,
-            ((0, 0), pad_h, pad_w),
+            ( pad_h, pad_w),
             constant_values=self.fill,
             mode=self.padding_mode,
         )
         mask = np.pad(
-            mask, (pad_h, pad_w), constant_values=self.fill, mode=self.padding_mode
+            mask,
+            ( pad_h, pad_w),
+            constant_values=self.fill,
+            mode=self.padding_mode,
         )
         i, j, h, w = self.get_params2d(img, self.size)
 
         # crop the image
-        img = img[:, i: i + h, j: j + w].copy()
+        img = img[i: i + h, j: j + w].copy()
         mask = mask[i: i + h, j: j + w].copy()
 
         return {"img": img, "mask": mask}
@@ -299,11 +302,14 @@ class RandomRotate90n(object):
         sample (dict): {'img': img, 'mask': mask}
     """
 
-    def __init__(self, axes=0):
+    def __init__(self, axes=(0,1)):
         self.axes = axes
+        axes = tuple(self.axes)
 
     def __call__(self, sample):
         image, mask = sample["img"], sample["mask"]
+
+
         degree = np.random.randint(0, 3)
         image = np.rot90(image, degree, axes=self.axes)
         mask = np.rot90(mask, degree, axes=self.axes)
@@ -326,7 +332,7 @@ class RandomFlip(object):
     def __call__(self, sample):
         image, mask = sample["img"], sample["mask"]
         if np.random.random() < self.p:
-            image = np.flip(image, axis=self.axis+1)
+            image = np.flip(image, axis=self.axis)
             mask = np.flip(mask, axis=self.axis)
         return {"img": image, "mask": mask}
 

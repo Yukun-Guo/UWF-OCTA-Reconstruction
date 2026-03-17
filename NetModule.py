@@ -12,10 +12,10 @@ from torchmetrics import functional as FM
 from lightning.pytorch.callbacks import early_stopping, model_checkpoint, lr_monitor
 from lightning.pytorch.loggers import TensorBoardLogger
 from Network import CNNNet
-from losses import dice
 from torchsummary import summary
 from typing import Dict, List, Any, Tuple
-
+from piqa import MS_SSIM,PSNR
+from segmentation_models_pytorch import Unet
 
 class NetModule(L.LightningModule):
     """
@@ -80,17 +80,15 @@ class NetModule(L.LightningModule):
         self.img_chn = config['DataModule']['image_shape'][2]
         self.n_class = config['DataModule']['n_class']
         self.example_input_array = torch.randn((1, self.img_chn, *self.input_size))
-        self.out = CNNNet(
-            in_channels=self.img_chn,
-            out_channels=self.n_class,
-            out_activation=None
-        )
+        self.out = CNNNet(decoder_channels=config['NetModule']["decoder_channels"])
 
         self.model_name = config['NetModule']["model_name"]
         self.log_dir = config['NetModule']["log_dir"]
         self.k_fold = config['DataModule']["k_fold"]
         self.valid_dataset = None
         self.train_dataset = None
+        self.ssim = MS_SSIM(n_channels=self.img_chn)
+        self.psnr = PSNR()
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -119,16 +117,17 @@ class NetModule(L.LightningModule):
         """
         x, y = batch
         y_hat = self.forward(x)
-        y_hat_s = F.softmax(y_hat, dim=1, _stacklevel=5)
+        y_hat_s = torch.sigmoid(y_hat)
         
-        # Combined loss: CrossEntropy + Dice
-        ce_loss = F.cross_entropy(y_hat, y)
-        dice_loss = dice.DiceLoss(mode='multiclass')(y_hat_s, y)
-        train_loss = ce_loss + dice_loss
+        # Combined loss: CrossEntropy + SSIM
+        ce_loss = F.mse_loss(y_hat_s, y)
+        ssim_loss = 1 - self.ssim(y_hat_s, y)
+        #SSIM loss is not used as it does not work well with one-hot encoded masks, so we use Dice loss instead
+        train_loss = ce_loss + ssim_loss
         
         self.log("train_loss", train_loss, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_ce_loss", ce_loss, on_epoch=True, logger=True)
-        self.log("train_dice_loss", dice_loss, on_epoch=True, logger=True)
+        self.log("train_ssim_loss", ssim_loss, on_epoch=True, logger=True)
 
         return {'loss': train_loss}
 
@@ -136,7 +135,7 @@ class NetModule(L.LightningModule):
         """
         Validation step for one batch.
         
-        Computes forward pass, calculates validation metrics (loss and IoU),
+        Computes forward pass, calculates validation metrics (loss and SSIM, PSNR),
         and logs them for monitoring.
         
         Args:
@@ -145,21 +144,19 @@ class NetModule(L.LightningModule):
         """
         x, y = batch
         y_hat = self.forward(x)
-        y_hat_s = F.softmax(y_hat, dim=1, _stacklevel=5)
+        y_hat_s = torch.sigmoid(y_hat)
         
         # Validation loss
-        ce_loss = F.cross_entropy(y_hat_s, y)
-        dice_loss = dice.DiceLoss(mode='multiclass')(y_hat_s, y)
-        val_loss = ce_loss + dice_loss
-        
-        # Validation IoU
-        val_iou = FM.jaccard_index(y_hat_s, y, task='multiclass', num_classes=self.n_class)
+        ce_loss = F.mse_loss(y_hat_s, y)
+        ssim_loss = 1 - self.ssim(y_hat_s, y)
+        val_loss = ce_loss + ssim_loss
+        ssim = self.ssim(y_hat_s, y)
+        psnr = self.psnr(y_hat_s, y)
         
         self.log_dict({
             'val_loss': val_loss,
-            'val_iou': val_iou,
-            'val_ce_loss': ce_loss,
-            'val_dice_loss': dice_loss
+            'val_ssim': ssim,
+            'val_psnr': psnr
         }, prog_bar=True, logger=True)
 
 

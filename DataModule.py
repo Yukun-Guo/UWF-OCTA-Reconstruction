@@ -70,6 +70,8 @@ class DataModel(L.LightningDataModule):
         super().__init__()
         self.image_path = config['DataModule']["image_path"]
         self.mask_path = config['DataModule']["mask_path"]
+        self.img_suffix = config['DataModule']["image_suffix"]
+        self.mask_suffix = config['DataModule']["mask_suffix"]
         self.batch_size = config['DataModule']["batch_size"]
         self.img_shape = config['DataModule']["image_shape"]
         self.shuffle = config['DataModule']["shuffle"]
@@ -109,8 +111,8 @@ class DataModel(L.LightningDataModule):
             FileNotFoundError: If image or mask directories don't exist
             ValueError: If number of images and masks don't match
         """
-        self.img_list = listFiles(self.image_path, "*.png")
-        self.gt_list = listFiles(self.mask_path, "*.png")
+        self.img_list = listFiles(self.image_path, f"*{self.img_suffix}")
+        self.gt_list = listFiles(self.mask_path, f"*{self.mask_suffix}")
         
         if len(self.img_list) != len(self.gt_list):
             raise ValueError(f"Mismatch: {len(self.img_list)} images vs {len(self.gt_list)} masks")
@@ -145,7 +147,7 @@ class DataModel(L.LightningDataModule):
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=self.shuffle,
-            num_workers=2,
+            num_workers=1,
             pin_memory=True
         )
 
@@ -160,7 +162,7 @@ class DataModel(L.LightningDataModule):
             self.valid_dataset,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=2,
+            num_workers=1,
             pin_memory=True
         )
 
@@ -175,7 +177,7 @@ class DataModel(L.LightningDataModule):
             self.test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=2,
+            num_workers=1,
             pin_memory=True
         )
 
@@ -187,3 +189,12 @@ class DataModel(L.LightningDataModule):
             stage (str, optional): Current stage being torn down
         """
         pass
+
+if __name__ == '__main__':
+    import toml
+    config = toml.load("./config.toml")
+    data_module = DataModel(config)
+    data_module.setup()
+    for img, mask in data_module.train_dataloader():
+        print(img[0].shape)
+        print(mask[0].shape)

@@ -125,7 +125,8 @@ def run_validation():
     all_predictions = []
     all_targets = []
     all_losses = []
-    all_ious = []
+    all_ssims = []
+    all_psnrs = []
     filenames = []
     
     val_dataloader = data_model.val_dataloader()
@@ -138,18 +139,21 @@ def run_validation():
             
             # Forward pass
             y_hat = net_model(x)
-            y_hat_softmax = F.softmax(y_hat, dim=1)
-            
+            y_hat_sigmoid = torch.sigmoid(y_hat)
+
             # Calculate metrics
-            batch_loss = F.cross_entropy(y_hat, y)
-            batch_iou = FM.jaccard_index(y_hat_softmax, y, task='multiclass', 
-                                       num_classes=config['DataModule']['n_class'])
-            
+            batch_loss = F.mse_loss(y_hat_sigmoid, y)
+            batch_ssim = FM.structural_similarity_index_measure(
+                y_hat_sigmoid, y, data_range=1.0)
+            batch_psnr = FM.peak_signal_noise_ratio(
+                y_hat_sigmoid, y, data_range=1.0)
+
             # Store results
-            all_predictions.extend(y_hat_softmax.cpu())
+            all_predictions.extend(y_hat_sigmoid.cpu())
             all_targets.extend(y.cpu())
             all_losses.append(batch_loss.item())
-            all_ious.append(batch_iou.item())
+            all_ssims.append(batch_ssim.item())
+            all_psnrs.append(batch_psnr.item())
             
             # Generate filenames for this batch
             batch_size = x.size(0)
@@ -160,16 +164,18 @@ def run_validation():
     # Calculate overall metrics
     overall_metrics = {
         "validation_loss": np.mean(all_losses),
-        "validation_iou": np.mean(all_ious),
+        "validation_ssim": np.mean(all_ssims),
+        "validation_psnr": np.mean(all_psnrs),
         "num_samples": len(all_predictions),
         "timestamp": datetime.now().isoformat(),
         "model_path": model_path,
         "config": config
     }
-    
+
     print(f"Validation completed:")
-    print(f"  - Average Loss: {overall_metrics['validation_loss']:.4f}")
-    print(f"  - Average IoU: {overall_metrics['validation_iou']:.4f}")
+    print(f"  - Average MSE Loss: {overall_metrics['validation_loss']:.4f}")
+    print(f"  - Average SSIM:     {overall_metrics['validation_ssim']:.4f}")
+    print(f"  - Average PSNR:     {overall_metrics['validation_psnr']:.4f} dB")
     print(f"  - Number of samples: {overall_metrics['num_samples']}")
     
     # Create timestamped output directory

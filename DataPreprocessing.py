@@ -6,6 +6,7 @@ and preprocessing image segmentation data, including data augmentation and
 format conversion.
 """
 
+
 import torch
 import numpy as np
 import scipy.io as sio
@@ -17,7 +18,7 @@ from tqdm import tqdm
 from typing import List, Tuple, Dict, Any, Union
 
 from Utils.utils import shuffle_lists, listFiles, read_img_list_to_npy
-from Utils.DataAugmentation import GrayJitter, RandomCrop2D, RandomFlip
+from Utils.DataAugmentation import GrayJitter, RandomCrop2D, RandomFlip,AddGaussianNoise,RandomRotate90n
 
 
 class myDataset_img(Dataset):
@@ -67,10 +68,13 @@ class myDataset_img(Dataset):
             img_list, gt_list = shuffle_lists(img_list, gt_list)
 
         self.imgs = read_img_list_to_npy(img_list, color_mode='gray')
-        self.gts = read_img_list_to_npy(gt_list, color_mode='idx')
+        self.gts = read_img_list_to_npy(gt_list, color_mode='gray')
         self.transform = transforms.Compose([
             GrayJitter(),
+            AddGaussianNoise(),
+            RandomFlip(axis=0),
             RandomFlip(axis=1),
+            RandomRotate90n(),
             RandomCrop2D(out_size),
             Normalize(),
             ToTensor()
@@ -101,12 +105,13 @@ class myDataset_img(Dataset):
             item = item.tolist()
 
         img, mask = self.imgs[item], self.gts[item]
-        img = np.expand_dims(img, 0)  # Add channel dimension
-
+        # img = np.expand_dims(img, 0)  # Add channel dimension
+        # mask = np.expand_dims(mask, 0)  # Add channel dimension
         sample = {'img': img, 'mask': mask}
         sample = self.transform(sample)
         
         return sample['img'], sample['mask']
+
 
 class Normalize(object):
     """
@@ -148,6 +153,8 @@ class Normalize(object):
         """
         img, mask = sample['img'], sample['mask']
         img = img / 255.0  # Normalize to [0, 1]
+        mask = mask / 255.0  # Normalize to [0, 1]
+        
         return {'img': img, 'mask': mask}
 
     def __repr__(self) -> str:
@@ -194,28 +201,33 @@ class ToTensor(object):
             img = torch.from_numpy(img.astype(np.float32))
         
         if not torch.is_tensor(mask):
-            mask = torch.from_numpy(mask.astype(np.int64))
+            mask = torch.from_numpy(mask.astype(np.float32))
 
+        img = torch.unsqueeze(img, dim=0)  # Add channel dimension if missing
+        mask = torch.unsqueeze(mask, dim=0)  # Add channel dimension if missing
         return {'img': img, 'mask': mask}
 
 
 if __name__ == '__main__':
+    import toml
     import matplotlib.pyplot as plt
     from torchvision.utils import make_grid
+    toml_file = "./config.toml"
+    config = toml.load(toml_file)   
 
-    img_list = listFiles('data/images', '*.png')
-    gt_list = listFiles('data/groundtruth', '*.png')
+    img_list = listFiles(config['DataModule']["image_path"], f"*{config['DataModule']['image_suffix']}")
+    gt_list = listFiles(config['DataModule']["mask_path"], f"*{config['DataModule']['mask_suffix']}")
     file_list = list(zip(img_list, gt_list))
-    dataset = myDataset_img(img_list, gt_list, (384, 288))
+    dataset = myDataset_img(img_list, gt_list, (960, 960))
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
     print(len(dataloader))
 
     for img, mask in dataloader:
         print(img[0].shape)
         print(mask[0].shape)
-        bscan = make_grid(torch.cat([img, img, img], dim=1)).permute(1, 2, 0)
-        plt.figure()
-        plt.subplot(1, 3, 1), plt.imshow(bscan.numpy())
-        plt.subplot(1, 3, 2), plt.imshow(np.squeeze(mask[0].numpy()))
-        plt.subplot(1, 3, 3), plt.imshow(np.squeeze(mask[0].numpy()))
-        plt.show()
+        # bscan = make_grid(torch.cat([img, img, img], dim=1)).permute(1, 2, 0)
+        # plt.figure()
+        # plt.subplot(1, 3, 1), plt.imshow(bscan.numpy())
+        # plt.subplot(1, 3, 2), plt.imshow(np.squeeze(mask[0].numpy()))
+        # plt.subplot(1, 3, 3), plt.imshow(np.squeeze(mask[0].numpy()))
+        # plt.show()

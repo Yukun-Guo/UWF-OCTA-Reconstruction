@@ -4,12 +4,14 @@
 version = "0.0.1"
 
 [DataModule]
-image_path = "./data/images"
-mask_path = "./data/masks"
+image_path = "./data"
+mask_path = "./data"
+image_suffix = "_inner_rm.png"
+mask_suffix = "_EnhancedAngio_InnerRetina.png"
 # Number of distinct label indices present in masks. Labels in `data/masks` range 0..11 so set to 12.
-n_class = 12
-image_shape = [480, 288, 1]
-batch_size = 16
+n_class = 1
+image_shape = [960, 960, 1]
+batch_size = 4
 split_ratio = [0.6, 0.2, 0.2]
 use_kfold = false
 k_fold = 5
@@ -18,8 +20,8 @@ augmentation = true
 shuffle = true
 
 [NetModule]
-model_name = "layer_segmentation"
-unet_channels = [64, 96, 128, 196]
+model_name = "reconstruction_unet"
+decoder_channels = [256, 128, 96, 64, 48]
 # Keep interpolation tokens as strings so existing code that performs replacement can still work
 input_shape = "${DataModule:image_shape}"
 out_channels = "${DataModule:n_class}"
